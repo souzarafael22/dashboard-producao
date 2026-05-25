@@ -140,7 +140,7 @@ tr:hover td { background: var(--bg3); }
 
 <header>
   <div class="logo">Produção <span>/ Dashboard</span></div>
-  <div class="hdate">Referência: 22/05/2026</div>
+  <div class="hdate">Último apontamento: 22/05/2026 às 14:05</div>
 </header>
 
 <nav class="nav">
@@ -162,7 +162,7 @@ tr:hover td { background: var(--bg3); }
       <button id="ovr-btn-qtd" onclick="setOvrMetric('qtd')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);padding:5px 14px;font-size:12px;cursor:pointer;font-family:var(--font)">Qtd de peças</button>
       <button id="ovr-btn-peso" onclick="setOvrMetric('peso')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);padding:5px 14px;font-size:12px;cursor:pointer;font-family:var(--font)">Peso (kg)</button>
     </div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">Referência: 22/05/2026</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">Último apontamento: 22/05/2026 às 14:05</div>
   </div>
 
   <div class="metrics" id="ovr-metrics"></div>
@@ -1057,378 +1057,313 @@ const SK_MAT_ORDER = ['POS 3','POS 4','POS 5','POS 6','POS 8','TRAV 75A','TRAV 7
 const OPE_LABEL = {LPA:'Cortar/Furar',PRF:'Perfilar',DOB:'Dobrar',DEC:'Decapar',GAL:'Galvanizar'};
 const OPE_COL   = {LPA:'#94a3b8',PRF:'#10b981',DOB:'#8b5cf6',DEC:'#f59e0b',GAL:'#3b82f6'};
 
-let sankeyMetric = 'peso';
-let sankeyMat    = 'TRAV 70B';
+let sankeyMetric = 'peso', sankeyMat = 'TRAV 70B';
 
-function setSankeyMetric(m) {
-  sankeyMetric = m;
-  ['kg','pc'].forEach(x => {
-    const b = document.getElementById('sk-btn-'+x);
-    const on = (m==='peso'&&x==='kg') || (m==='pc'&&x==='pc');
-    b.style.background = on ? '#3b82f6' : 'var(--bg3)';
-    b.style.color = on ? '#fff' : 'var(--text2)';
-    b.style.borderColor = on ? '#3b82f6' : 'var(--border2)';
+function setSankeyMetric(m){
+  sankeyMetric=m;
+  ['kg','pc'].forEach(x=>{
+    const b=document.getElementById('sk-btn-'+x),on=(m==='peso'&&x==='kg')||(m==='pc'&&x==='pc');
+    b.style.background=on?'#3b82f6':'var(--bg3)';b.style.color=on?'#fff':'var(--text2)';b.style.borderColor=on?'#3b82f6':'var(--border2)';
   });
   renderSankey();
 }
+function setSankeyMat(m){sankeyMat=m;renderSankey();}
 
-function setSankeyMat(m) {
-  sankeyMat = m;
-  renderSankey();
-}
+function renderSankey(){
+  const el=document.getElementById('sankey-svg');
+  el.innerHTML='';
+  const d=SK_DATA[sankeyMat]; if(!d) return;
+  const isKg=sankeyMetric==='peso', mk=isKg?'kg':'pc';
+  const T=d.total[mk], flows=d.flows, conc=d.conc[mk], hasDOB=d.has_dob, firstOp=d.first_op;
+  const fmtV=v=>isKg?(v>=1000?(v/1000).toFixed(1)+'t':Math.round(v)+' kg'):Math.round(v).toLocaleString('pt-BR')+' pç';
+  const pctOf=v=>(T>0?(v/T*100).toFixed(1):'0.0')+'%';
 
-function renderSankey() {
-  const el = document.getElementById('sankey-svg');
-  el.innerHTML = '';
-  const d = SK_DATA[sankeyMat];
-  if (!d) return;
+  const fFirst=flows[firstOp]||{};
+  const mkSuf=isKg?'_kg':'_pc';
+  const dobInVal=flows['DOB']?flows['DOB']['in'+mkSuf]:0;
+  const passVal=fFirst['pass'+mkSuf]||0;
+  // Inline when DOB carries >50% of whatever passes the first stage
+  const dobIsInline=hasDOB&&passVal>0&&(dobInVal/passVal)>0.5;
 
-  const isKg = sankeyMetric === 'peso';
-  const mk = isKg ? 'kg' : 'pc';
-  const unit = isKg ? 'kg' : 'pç';
+  const W=el.clientWidth||660;
+  const H=dobIsInline?420:(hasDOB?520:400);
+  const BH=270, TOP=60, NW=24;
+  const sc=BH/T;
 
-  const T = d.total[mk];
-  const flows = d.flows;
-  const conc  = d.conc[mk];
-  const hasDOB = d.has_dob;
-  const firstOp = d.first_op;
+  const svg=d3.select('#sankey-svg').append('svg')
+    .attr('width',W).attr('height',H).attr('viewBox',`0 0 ${W} ${H}`)
+    .style('font-family','IBM Plex Sans, sans-serif');
+  const g=svg.append('g');
 
-  const fmtV = v => isKg
-    ? (v >= 1000 ? (v/1000).toFixed(1)+'t' : Math.round(v)+' kg')
-    : Math.round(v).toLocaleString('pt-BR')+' pç';
-  const pctOf = v => (T > 0 ? (v/T*100).toFixed(1) : '0.0') + '%';
-
-  // Layout
-  const W = el.clientWidth || 660;
-  const H = hasDOB ? 520 : 400;
-  const BH   = 260;     // max band height for 100% of total
-  const TOP  = 60;
-  const NW   = 28;
-  const sc   = BH / T;
-  const DOB_GAP = 30;
-
-  // X positions (main stages, DOB is a detour below)
-  const mainStages = d.stages.filter(s => s !== 'DOB');
-  const nMain = mainStages.length;
-  const usable = W - 160;  // leave right margin for labels
-  const stageXs = {};
-  mainStages.forEach((s, i) => { stageXs[s] = 40 + i * (usable / (nMain - 0.5)); });
-  const xCONC = stageXs[mainStages[mainStages.length - 1]] + NW + Math.min(80, (usable / (nMain - 0.5)) * 0.6);
-
-  // DOB x sits halfway between first and DEC
-  const xDOB = hasDOB ? (stageXs[firstOp] + NW + stageXs['DEC']) / 2 - NW/2 : 0;
-
-  // Helper: flow polygon between two y-spans
-  const fp = (x1, y1a, y1b, x2, y2a, y2b) => {
-    const mx = (x1 + x2) / 2;
-    return `M${x1},${y1a} C${mx},${y1a} ${mx},${y2a} ${x2},${y2a}` +
-           ` L${x2},${y2b} C${mx},${y2b} ${mx},${y1b} ${x1},${y1b} Z`;
-  };
-
-  const svg = d3.select('#sankey-svg').append('svg')
-    .attr('width', W).attr('height', H)
-    .attr('viewBox', `0 0 ${W} ${H}`)
-    .style('font-family', 'IBM Plex Sans, sans-serif');
-
-  const g = svg.append('g');
-
-  // Tooltip div
-  const tip = d3.select('#sankey-svg').append('div')
+  const tip=d3.select('#sankey-svg').append('div')
     .style('position','absolute').style('display','none').style('pointer-events','none')
     .style('background','#1e2535').style('border','1px solid rgba(255,255,255,.15)')
     .style('border-radius','6px').style('padding','8px 12px')
-    .style('font-size','11px').style('color','#e8eaf0').style('line-height','1.6')
-    .style('max-width','200px');
-
-  const showTip = (html, evt) => {
+    .style('font-size','11px').style('color','#e8eaf0').style('line-height','1.6').style('max-width','200px');
+  const showTip=(html,evt)=>{
     tip.style('display','block').html(html);
-    const rect = el.getBoundingClientRect();
-    const ex = evt.clientX - rect.left + 12;
-    const ey = evt.clientY - rect.top  - 10;
-    tip.style('left', ex+'px').style('top', ey+'px');
+    const r=el.getBoundingClientRect();
+    tip.style('left',(evt.clientX-r.left+12)+'px').style('top',(evt.clientY-r.top-10)+'px');
   };
-  const hideTip = () => tip.style('display','none');
+  const hideTip=()=>tip.style('display','none');
 
-  // ── Compute Y positions for each stage (top-aligned, stop at bottom) ──────
-  const yTop  = {};  // top of incoming band
-  const yBot  = {};  // bottom of incoming band (= top + in*sc)
-  const yStopTop = {};  // top of stop block (= yBot - stop*sc)
-  const yPassBot = {};  // bottom of pass-through portion (= yStopTop)
-
-  // First op
-  const firstFlow = flows[firstOp] || {};
-  yTop[firstOp]  = TOP;
-  yBot[firstOp]  = TOP + (firstFlow.in_kg > 0 ? T * sc : 1);
-  yStopTop[firstOp] = yBot[firstOp] - (firstFlow.stop_kg || 0) * sc;
-  yPassBot[firstOp] = yStopTop[firstOp];
-
-  // DEC (if present)
-  if (flows['DEC']) {
-    const decIn = (flows['DEC'].in_kg || 0);
-    yTop['DEC']  = TOP;
-    yBot['DEC']  = TOP + decIn * sc;
-    yStopTop['DEC'] = yBot['DEC'] - (flows['DEC'].stop_kg || 0) * sc;
-    yPassBot['DEC'] = yStopTop['DEC'];
-  }
-
-  // GAL (if present)
-  if (flows['GAL']) {
-    const galIn = (flows['GAL'].in_kg || 0);
-    yTop['GAL']  = TOP;
-    yBot['GAL']  = TOP + galIn * sc;
-    yStopTop['GAL'] = yBot['GAL'] - (flows['GAL'].stop_kg || 0) * sc;
-    yPassBot['GAL'] = yStopTop['GAL'];
-  }
-
-  // Concluído
-  const yConcTop = TOP;
-  const yConcBot = TOP + conc * sc;
-
-  // DOB detour y positions
-  const yDOB_top = hasDOB ? (TOP + BH + DOB_GAP) : 0;
-  const dobIn = hasDOB ? (flows['DOB'] ? flows['DOB'].in_kg : 0) : 0;
-  const dobStop = hasDOB ? (flows['DOB'] ? flows['DOB'].stop_kg : 0) : 0;
-  const dobPass = hasDOB ? (flows['DOB'] ? flows['DOB'].pass_kg : 0) : 0;
-  const yDOB_bot = yDOB_top + dobIn * sc;
-  const yDOB_stopTop = yDOB_bot - dobStop * sc;
-
-  // ── Determine strip layout within first-op band ──────────────────────────
-  // From top to bottom: [conc-direct | DEC-direct | DOB | stop]
-  const firstDECdirect = flows['DEC'] ? (flows['DEC'].in_kg - dobPass) : flows[firstOp].pass_kg;
-  const firstConcDirect = conc - (flows['DEC'] ? flows['DEC'].pass_kg : 0);
-  const firstDOB = dobIn;
-
-  const yFirstStop_top = yBot[firstOp] - (firstFlow.stop_kg || 0) * sc;
-  const yFirstDOB_bot  = yFirstStop_top;
-  const yFirstDOB_top  = yFirstDOB_bot - firstDOB * sc;
-  const yFirstDEC_bot  = yFirstDOB_top;
-  const yFirstDEC_top  = yFirstDEC_bot - firstDECdirect * sc;
-  const yFirstConc_bot = yFirstDEC_top;
-  const yFirstConc_top = yFirstConc_bot - firstConcDirect * sc;
-
-  // Where DOB-pass enters DEC (bottom of DEC pass area, above stop)
-  const yDEC_dobPass_bot = flows['DEC'] ? yStopTop['DEC'] : TOP;
-  const yDEC_dobPass_top = yDEC_dobPass_bot - dobPass * sc;
-
-  // ── FLOW PATHS ────────────────────────────────────────────────────────────
-
-  // first → DEC direct
-  if (flows['DEC'] && firstDECdirect > 0) {
-    const xR = stageXs[firstOp]+NW, xL = stageXs['DEC'];
-    const pathEl = g.append('path')
-      .attr('d', fp(xR, yFirstDEC_top, yFirstDEC_bot, xL, yTop['DEC'], yDEC_dobPass_top))
-      .attr('fill', OPE_COL['DEC']).attr('opacity',0.28)
-      .style('cursor','default');
-    pathEl.on('mouseover', evt => showTip(
-      `<strong>${firstOp} → DEC</strong><br>${fmtV(firstDECdirect*mk.replace('kg',1).replace('pc',1))} — ${pctOf(firstDECdirect)}<br>Fluxo direto`,
-      evt))
-    .on('mousemove', evt => showTip(
-      `<strong>${firstOp} → DEC (direto)</strong><br>${fmtV(flows['DEC'].in_kg - dobPass)} &middot; ${pctOf(flows['DEC'].in_kg - dobPass)}`, evt))
-    .on('mouseout', hideTip);
-  }
-
-  // first → DOB (curves down)
-  if (hasDOB && dobIn > 0) {
-    const xR = stageXs[firstOp]+NW, xDL = xDOB;
-    const mx = (xR+xDL)/2;
-    g.append('path').attr('d',
-      `M${xR},${yFirstDOB_top} C${mx},${yFirstDOB_top} ${mx},${yDOB_top} ${xDL},${yDOB_top}` +
-      ` L${xDL},${yDOB_bot} C${mx},${yDOB_bot} ${mx},${yFirstDOB_bot} ${xR},${yFirstDOB_bot} Z`)
-      .attr('fill', OPE_COL['DOB']).attr('opacity',0.25)
-      .style('cursor','default')
-      .on('mouseover', evt => showTip(`<strong>${firstOp} → DOB</strong><br>${fmtV(dobIn)} &middot; ${pctOf(dobIn)}<br>Rota com Dobrar`, evt))
-      .on('mousemove', evt => showTip(`<strong>${firstOp} → DOB</strong><br>${fmtV(dobIn)} &middot; ${pctOf(dobIn)}`, evt))
-      .on('mouseout', hideTip);
-  }
-
-  // DOB → DEC (curves back up)
-  if (hasDOB && dobPass > 0 && flows['DEC']) {
-    const xDR = xDOB+NW, xDL = stageXs['DEC'];
-    const mx = (xDR+xDL)/2;
-    g.append('path').attr('d',
-      `M${xDR},${yDOB_top} C${mx},${yDOB_top} ${mx},${yDEC_dobPass_top} ${xDL},${yDEC_dobPass_top}` +
-      ` L${xDL},${yDEC_dobPass_bot} C${mx},${yDEC_dobPass_bot} ${mx},${yDOB_stopTop} ${xDR},${yDOB_stopTop} Z`)
-      .attr('fill', OPE_COL['DOB']).attr('opacity',0.2)
-      .on('mouseover', evt => showTip(`<strong>DOB → DEC</strong><br>${fmtV(dobPass)} &middot; ${pctOf(dobPass)}<br>Após Dobrar`, evt))
-      .on('mousemove', evt => showTip(`<strong>DOB → DEC</strong><br>${fmtV(dobPass)} &middot; ${pctOf(dobPass)}`, evt))
-      .on('mouseout', hideTip);
-  }
-
-  // DEC → GAL
-  if (flows['DEC'] && flows['GAL'] && flows['DEC'].pass_kg > 0) {
-    const decPass = flows['DEC'].pass_kg;
-    g.append('path').attr('d', fp(stageXs['DEC']+NW, yTop['DEC'], yStopTop['DEC'], stageXs['GAL'], yTop['GAL'], yBot['GAL']))
-      .attr('fill', OPE_COL['GAL']).attr('opacity',0.28)
-      .on('mouseover', evt => showTip(`<strong>DEC → GAL</strong><br>${fmtV(decPass)} &middot; ${pctOf(decPass)}`, evt))
-      .on('mousemove', evt => showTip(`<strong>DEC → GAL</strong><br>${fmtV(decPass)} &middot; ${pctOf(decPass)}`, evt))
-      .on('mouseout', hideTip);
-  }
-
-  // GAL → Concluído
-  if (flows['GAL'] && flows['GAL'].pass_kg > 0) {
-    const galPass = flows['GAL'].pass_kg;
-    g.append('path').attr('d', fp(stageXs['GAL']+NW, yTop['GAL'], yPassBot['GAL'], xCONC, yConcTop, yConcTop + galPass*sc))
-      .attr('fill','#34d399').attr('opacity',0.28)
-      .on('mouseover', evt => showTip(`<strong>GAL → Concluído</strong><br>${fmtV(galPass)} &middot; ${pctOf(galPass)}`, evt))
-      .on('mousemove', evt => showTip(`<strong>GAL → Concluído</strong><br>${fmtV(galPass)} &middot; ${pctOf(galPass)}`, evt))
-      .on('mouseout', hideTip);
-  }
-
-  // first → Concluído direct (thin strip at top, for PRF-only done OPs)
-  if (firstConcDirect > 0 && !flows['DEC']) {
-    const fcPass = firstConcDirect;
-    g.append('path').attr('d', fp(stageXs[firstOp]+NW, yFirstConc_top, yFirstConc_bot, xCONC, yConcTop+flows['GAL']?.pass_kg*sc||0, yConcBot))
-      .attr('fill','#34d399').attr('opacity',0.2)
-      .on('mouseover', evt => showTip(`<strong>${firstOp} → Concluído</strong><br>${fmtV(fcPass)} &middot; ${pctOf(fcPass)}`, evt))
-      .on('mouseout', hideTip);
-  }
-
-  // ── NODE RECTANGLES ───────────────────────────────────────────────────────
-  const addNode = (ope, xL, yT, yB, yStT, col, tipHtml) => {
-    const h = Math.max(1, yB - yT);
-    const stopH = Math.max(0, yB - yStT);
-    const passH = Math.max(0, yStT - yT);
-
-    const rNode = g.append('rect')
-      .attr('x', xL).attr('y', yT).attr('width', NW).attr('height', h)
-      .attr('fill', col).attr('rx', 3).style('cursor','default');
-
-    if (stopH > 0)
-      g.append('rect').attr('x', xL).attr('y', yStT).attr('width', NW).attr('height', stopH)
-       .attr('fill','#ef4444').attr('rx', 0);
-
-    [rNode].forEach(r =>
-      r.on('mouseover', evt => showTip(tipHtml, evt))
-       .on('mousemove', evt => showTip(tipHtml, evt))
-       .on('mouseout', hideTip));
+  const fp=(x1,y1a,y1b,x2,y2a,y2b)=>{
+    const mx=(x1+x2)/2;
+    return `M${x1},${y1a} C${mx},${y1a} ${mx},${y2a} ${x2},${y2a} L${x2},${y2b} C${mx},${y2b} ${mx},${y1b} ${x1},${y1b} Z`;
   };
 
-  // First op node
-  const fIn = firstFlow.in_kg || T;
-  const fStop = firstFlow.stop_kg || 0;
-  const fPass = firstFlow.pass_kg || 0;
-  addNode(firstOp, stageXs[firstOp], yTop[firstOp], yBot[firstOp], yFirstStop_top,
-    OPE_COL[firstOp],
-    `<strong>${firstOp} — ${OPE_LABEL[firstOp]}</strong><br>` +
-    `Entrada: ${fmtV(T)}<br>Passa: ${fmtV(fPass)} &middot; ${pctOf(fPass)}<br>` +
-    `<span style="color:#ef4444">Para aqui: ${fmtV(fStop)} &middot; ${pctOf(fStop)}</span>`);
-
-  // DOB node
-  if (hasDOB && dobIn > 0) {
-    addNode('DOB', xDOB, yDOB_top, yDOB_bot, yDOB_stopTop, OPE_COL['DOB'],
-      `<strong>DOB — Dobrar</strong><br>` +
-      `Entrada: ${fmtV(dobIn)} &middot; ${pctOf(dobIn)}<br>` +
-      `Passa: ${fmtV(dobPass)} &middot; ${pctOf(dobPass)}<br>` +
-      `<span style="color:#ef4444">Para aqui: ${fmtV(dobStop)} &middot; ${pctOf(dobStop)}</span>`);
-  }
-
-  // DEC node
-  if (flows['DEC'] && flows['DEC'].in_kg > 0) {
-    const decF = flows['DEC'];
-    addNode('DEC', stageXs['DEC'], yTop['DEC'], yBot['DEC'], yStopTop['DEC'], OPE_COL['DEC'],
-      `<strong>DEC — Decapar</strong><br>` +
-      `Entrada: ${fmtV(decF.in_kg)} &middot; ${pctOf(decF.in_kg)}<br>` +
-      `Passa: ${fmtV(decF.pass_kg)} &middot; ${pctOf(decF.pass_kg)}<br>` +
-      `<span style="color:#ef4444">Para aqui: ${fmtV(decF.stop_kg)} &middot; ${pctOf(decF.stop_kg)}</span>`);
-  }
-
-  // GAL node
-  if (flows['GAL'] && flows['GAL'].in_kg > 0) {
-    const galF = flows['GAL'];
-    addNode('GAL', stageXs['GAL'], yTop['GAL'], yBot['GAL'], yStopTop['GAL'], OPE_COL['GAL'],
-      `<strong>GAL — Galvanizar</strong><br>` +
-      `Entrada: ${fmtV(galF.in_kg)} &middot; ${pctOf(galF.in_kg)}<br>` +
-      `Passa: ${fmtV(galF.pass_kg)} &middot; ${pctOf(galF.pass_kg)}<br>` +
-      `<span style="color:#ef4444">Para aqui: ${fmtV(galF.stop_kg)} &middot; ${pctOf(galF.stop_kg)}</span>`);
-  }
-
-  // Concluído node
-  if (conc > 0) {
-    g.append('rect').attr('x',xCONC).attr('y',yConcTop).attr('width',NW).attr('height',Math.max(1,(yConcBot-yConcTop))).attr('fill','#34d399').attr('rx',3)
-      .on('mouseover', evt => showTip(`<strong>✓ Concluído</strong><br>${fmtV(conc)} &middot; ${pctOf(conc)}`, evt))
-      .on('mousemove', evt => showTip(`<strong>✓ Concluído</strong><br>${fmtV(conc)} &middot; ${pctOf(conc)}`, evt))
-      .on('mouseout', hideTip);
-  }
-
-  // ── LABELS ────────────────────────────────────────────────────────────────
-  const lbl = (x, y, txt, size=10, col='#8892a4', anchor='middle', bold=false) => {
+  const lbl=(x,y,txt,size=10,col='#8892a4',anchor='middle',bold=false)=>
     g.append('text').attr('x',x).attr('y',y).attr('text-anchor',anchor)
-     .style('font-size',size+'px').style('fill',col)
-     .style('font-weight', bold ? '500' : '400')
+     .style('font-size',size+'px').style('fill',col).style('font-weight',bold?'500':'400')
      .style('font-family','IBM Plex Sans, sans-serif').text(txt);
+
+  const stageLbl=(ope,x,yAbove)=>{
+    lbl(x+NW/2,yAbove-18,ope,11,OPE_COL[ope],'middle',true);
+    lbl(x+NW/2,yAbove-6,OPE_LABEL[ope]||ope,9,'#4d5568');
   };
 
-  // Stage name labels above nodes
-  const addStageLbl = (ope, x, yAbove) => {
-    lbl(x+NW/2, yAbove-18, ope, 11, OPE_COL[ope], 'middle', true);
-    lbl(x+NW/2, yAbove-6,  OPE_LABEL[ope], 9, '#4d5568');
+  const nodeRect=(ope,x,yT,inH,stopH,col,tipHtml)=>{
+    g.append('rect').attr('x',x).attr('y',yT).attr('width',NW).attr('height',Math.max(1,inH))
+     .attr('fill',col).attr('rx',3)
+     .on('mouseover',evt=>showTip(tipHtml,evt)).on('mousemove',evt=>showTip(tipHtml,evt)).on('mouseout',hideTip);
+    if(stopH>0)
+      g.append('rect').attr('x',x).attr('y',yT+inH-stopH).attr('width',NW).attr('height',stopH)
+       .attr('fill','#ef4444').attr('rx',0)
+       .on('mouseover',evt=>showTip(tipHtml,evt)).on('mousemove',evt=>showTip(tipHtml,evt)).on('mouseout',hideTip);
   };
 
-  addStageLbl(firstOp, stageXs[firstOp], TOP);
-  if (hasDOB && dobIn > 0) addStageLbl('DOB', xDOB, yDOB_top);
-  if (flows['DEC'] && flows['DEC'].in_kg > 0) addStageLbl('DEC', stageXs['DEC'], TOP);
-  if (flows['GAL'] && flows['GAL'].in_kg > 0) addStageLbl('GAL', stageXs['GAL'], TOP);
-  if (conc > 0) {
-    lbl(xCONC+NW/2, TOP-18, '✓', 13, '#34d399', 'middle', true);
-    lbl(xCONC+NW/2, TOP-6, 'Concluído', 9, '#4d5568');
-  }
+  const dropArrow=(x,yBot,label)=>{
+    if(yBot+6>H-4) return;
+    const mx=x+NW/2;
+    g.append('line').attr('x1',mx).attr('y1',yBot).attr('x2',mx).attr('y2',Math.min(yBot+16,H-10))
+     .attr('stroke','#ef4444').attr('stroke-width',1).attr('stroke-dasharray','2,2').attr('opacity',.5);
+    if(yBot+26<H-2)
+      g.append('text').attr('x',mx).attr('y',yBot+26).attr('text-anchor','middle')
+       .style('font-size','8px').style('fill','#ef4444').style('font-family','IBM Plex Sans, sans-serif').text('⏳ para aqui');
+  };
 
-  // Volume labels (right of nodes)
-  const addVolLbl = (x, yMid, inV, stopV, col) => {
-    if (inV > 0) {
-      lbl(x+NW+5, yMid-4,  fmtV(inV),   9, '#8892a4', 'start');
-      lbl(x+NW+5, yMid+7, pctOf(inV),   8, '#4d5568', 'start');
-    }
-    if (stopV > 0 && stopV * sc > 12) {
-      lbl(x-4, yMid + 14, fmtV(stopV), 8, '#ef4444', 'end');
-      lbl(x-4, yMid + 3,  pctOf(stopV), 8, '#ef4444', 'end');
+  const volLbl=(x,yMid,inV,stopV,col)=>{
+    if(inV>0){lbl(x+NW+5,yMid-4,fmtV(inV),9,'#8892a4','start');lbl(x+NW+5,yMid+7,pctOf(inV),8,'#4d5568','start');}
+    if(stopV>0&&stopV*sc>12){
+      const ysm=TOP+(inV-stopV/2)*sc;
+      lbl(x-4,ysm,pctOf(stopV),8,'#ef4444','end');
+      lbl(x-4,ysm+10,fmtV(stopV),8,'#ef4444','end');
     }
   };
 
-  addVolLbl(stageXs[firstOp], TOP + T*sc/2, T, fStop, OPE_COL[firstOp]);
-  if (hasDOB && dobIn > 0)
-    addVolLbl(xDOB, yDOB_top + dobIn*sc/2, dobIn, dobStop, OPE_COL['DOB']);
-  if (flows['DEC'] && flows['DEC'].in_kg > 0) {
-    const dF = flows['DEC'];
-    const yMid = yTop['DEC'] + (yBot['DEC']-yTop['DEC'])/2;
-    lbl(stageXs['DEC']+NW+5, yMid-4, fmtV(dF.in_kg), 9, '#8892a4', 'start');
-    lbl(stageXs['DEC']+NW+5, yMid+7, pctOf(dF.in_kg), 8, '#4d5568', 'start');
-    if (dF.stop_kg * sc > 12) {
-      const ysm = yStopTop['DEC'] + dF.stop_kg*sc/2;
-      lbl(stageXs['DEC']-4, ysm+3, fmtV(dF.stop_kg), 8, '#ef4444', 'end');
-      lbl(stageXs['DEC']-4, ysm-7, pctOf(dF.stop_kg), 8, '#ef4444', 'end');
+  // ── INLINE LAYOUT (DOB is main path) ──────────────────────────────────────
+  if(dobIsInline){
+    const inlineStages=[firstOp,'DOB',...d.stages.filter(s=>s!==firstOp&&s!=='DOB')];
+    const hasConc=conc>0;
+    const nCols=inlineStages.length+(hasConc?1:0);
+    const usable=W-50-160;
+    const step=usable/(Math.max(nCols-1,1));
+    const sX={};
+    inlineStages.forEach((s,i)=>{sX[s]=50+i*step;});
+    const xConc=50+(nCols-1)*step;
+
+    // Draw connecting flows between consecutive stages
+    for(let i=0;i<inlineStages.length-1;i++){
+      const s=inlineStages[i], sNext=inlineStages[i+1];
+      const fS=flows[s]||{}, fNext=flows[sNext]||{};
+      const passS=fS['pass'+mkSuf]||0;
+      const inNext=fNext['in'+mkSuf]||0;
+      if(passS<=0||inNext<=0) continue;
+      const y1a=TOP, y1b=TOP+passS*sc;
+      const y2a=TOP, y2b=TOP+inNext*sc;
+      g.append('path').attr('d',fp(sX[s]+NW,y1a,y1b,sX[sNext],y2a,y2b))
+       .attr('fill',OPE_COL[sNext]).attr('opacity',.28)
+       .on('mouseover',evt=>showTip(`<strong>${s} → ${sNext}</strong><br>${fmtV(passS)} · ${pctOf(passS)}`,evt))
+       .on('mousemove',evt=>showTip(`<strong>${s} → ${sNext}</strong><br>${fmtV(passS)} · ${pctOf(passS)}`,evt))
+       .on('mouseout',hideTip);
     }
-  }
-  if (flows['GAL'] && flows['GAL'].in_kg > 0) {
-    const gF = flows['GAL'];
-    const yMid = yTop['GAL'] + (yBot['GAL']-yTop['GAL'])/2;
-    lbl(stageXs['GAL']+NW+5, yMid-4, fmtV(gF.in_kg), 9, '#8892a4', 'start');
-    lbl(stageXs['GAL']+NW+5, yMid+7, pctOf(gF.in_kg), 8, '#4d5568', 'start');
-    if (gF.stop_kg * sc > 12) {
-      const ysm = yStopTop['GAL'] + gF.stop_kg*sc/2;
-      lbl(stageXs['GAL']-4, ysm+3, fmtV(gF.stop_kg), 8, '#ef4444', 'end');
+
+    // GAL → Conc
+    const lastMain=inlineStages[inlineStages.length-1];
+    const fLast=flows[lastMain]||{};
+    const passLast=fLast['pass'+mkSuf]||0;
+    if(passLast>0&&hasConc){
+      g.append('path').attr('d',fp(sX[lastMain]+NW,TOP,TOP+passLast*sc,xConc,TOP,TOP+conc*sc))
+       .attr('fill','#34d399').attr('opacity',.28)
+       .on('mouseover',evt=>showTip(`<strong>${lastMain} → Concluído</strong><br>${fmtV(conc)} · ${pctOf(conc)}`,evt))
+       .on('mouseout',hideTip);
     }
-  }
-  if (conc > 0 && conc * sc > 12) {
-    lbl(xCONC+NW+5, yConcTop + (yConcBot-yConcTop)/2 - 4, fmtV(conc), 10, '#34d399', 'start', true);
-    lbl(xCONC+NW+5, yConcTop + (yConcBot-yConcTop)/2 + 8, pctOf(conc), 9, '#34d399', 'start');
+
+    // Draw nodes
+    inlineStages.forEach(ope=>{
+      const fS=flows[ope]||{};
+      const inV=fS['in'+mkSuf]||0; if(inV<=0) return;
+      const stopV=fS['stop'+mkSuf]||0;
+      const col=OPE_COL[ope]||'#888';
+      const tip2=`<strong>${ope} — ${OPE_LABEL[ope]||ope}</strong><br>`+
+        `Entrada: ${fmtV(inV)} · ${pctOf(inV)}<br>`+
+        `Passa: ${fmtV(inV-stopV)} · ${pctOf(inV-stopV)}<br>`+
+        `<span style="color:#ef4444">Para aqui: ${fmtV(stopV)} · ${pctOf(stopV)}</span>`;
+      nodeRect(ope,sX[ope],TOP,inV*sc,stopV*sc,col,tip2);
+      stageLbl(ope,sX[ope],TOP);
+      // Volume labels
+      const yMid=TOP+inV*sc/2;
+      lbl(sX[ope]+NW+5,yMid-4,fmtV(inV),9,'#8892a4','start');
+      lbl(sX[ope]+NW+5,yMid+7,pctOf(inV),8,'#4d5568','start');
+      if(stopV*sc>14){
+        const ystop=TOP+inV*sc-stopV*sc/2;
+        lbl(sX[ope]-4,ystop,pctOf(stopV),8,'#ef4444','end');
+        lbl(sX[ope]-4,ystop+10,fmtV(stopV),8,'#ef4444','end');
+        dropArrow(sX[ope],TOP+inV*sc,'');
+      }
+    });
+
+    // Conc node
+    if(hasConc){
+      g.append('rect').attr('x',xConc).attr('y',TOP).attr('width',NW).attr('height',Math.max(1,conc*sc))
+       .attr('fill','#34d399').attr('rx',3)
+       .on('mouseover',evt=>showTip(`<strong>✓ Concluído</strong><br>${fmtV(conc)} · ${pctOf(conc)}`,evt)).on('mouseout',hideTip);
+      lbl(xConc+NW/2,TOP-18,'✓',13,'#34d399','middle',true);
+      lbl(xConc+NW/2,TOP-6,'Concluído',9,'#4d5568');
+      lbl(xConc+NW+5,TOP+conc*sc/2-4,fmtV(conc),10,'#34d399','start',true);
+      lbl(xConc+NW+5,TOP+conc*sc/2+9,pctOf(conc),9,'#34d399','start');
+    }
+    return;
   }
 
-  // Stop drop indicators
-  const addDrop = (x, yTop, yBot) => {
-    if (yBot - yTop < 6) return;
-    const mx = x + NW/2;
-    g.append('line').attr('x1',mx).attr('y1',yBot).attr('x2',mx).attr('y2',Math.min(yBot+16, H-10))
-     .attr('stroke','#ef4444').attr('stroke-width',1).attr('stroke-dasharray','2,2').attr('opacity',0.5);
-    g.append('text').attr('x',mx).attr('y',Math.min(yBot+26, H-2)).attr('text-anchor','middle')
-     .style('font-size','8px').style('fill','#ef4444').style('font-family','IBM Plex Sans, sans-serif')
-     .text('⏳ para aqui');
-  };
+  // ── DETOUR LAYOUT (DOB is minority side path) ─────────────────────────────
+  const mainStages=d.stages.filter(s=>s!=='DOB');
+  const nMain=mainStages.length;
+  const usable=W-160;
+  const stageXs={};
+  mainStages.forEach((s,i)=>{stageXs[s]=40+i*(usable/(nMain-0.5));});
+  const xCONC=stageXs[mainStages[mainStages.length-1]]+NW+Math.min(80,(usable/(nMain-0.5))*0.6);
+  const xDOB=hasDOB?(stageXs[firstOp]+NW+stageXs['DEC'])/2-NW/2:0;
 
-  if ((firstFlow.stop_kg||0)*sc > 5) addDrop(stageXs[firstOp], yFirstStop_top, yBot[firstOp]);
-  if (hasDOB && dobStop*sc > 5) addDrop(xDOB, yDOB_stopTop, yDOB_bot);
-  if (flows['DEC'] && flows['DEC'].stop_kg*sc > 5) addDrop(stageXs['DEC'], yStopTop['DEC'], yBot['DEC']);
-  if (flows['GAL'] && flows['GAL'].stop_kg*sc > 5) addDrop(stageXs['GAL'], yStopTop['GAL'], yBot['GAL']);
+  const dobInKg=flows['DOB']?flows['DOB']['in'+mkSuf]:0;
+  const dobStop=flows['DOB']?flows['DOB']['stop'+mkSuf]:0;
+  const dobPass=flows['DOB']?flows['DOB']['pass'+mkSuf]:0;
+  const DOB_GAP=Math.max(10,30*(1-dobInKg/T)*1.5);
+  const yDOB_top=hasDOB?TOP+BH+DOB_GAP:0;
+  const yDOB_bot=yDOB_top+dobInKg*sc;
+  const yDOB_stopTop=yDOB_bot-dobStop*sc;
+
+  // Y layout for first stage
+  const firstIn=fFirst['in'+mkSuf]||T;
+  const firstStop=fFirst['stop'+mkSuf]||0;
+  const firstPass=fFirst['pass'+mkSuf]||0;
+  const yBot_first=TOP+firstIn*sc;
+
+  // Strip decomposition within first-op (top→bottom): [concDirect | decDirect | DOB | stop]
+  const firstDECdirect=flows['DEC']?(flows['DEC']['in'+mkSuf]-dobPass):firstPass;
+  const firstConcDirect=conc-(flows['DEC']?flows['DEC']['pass'+mkSuf]:0);
+  const yFirstStop_top=yBot_first-firstStop*sc;
+  const yFirstDOB_bot=yFirstStop_top;
+  const yFirstDOB_top=yFirstDOB_bot-dobInKg*sc;
+  const yFirstDEC_bot=yFirstDOB_top;
+  const yFirstDEC_top=yFirstDEC_bot-firstDECdirect*sc;
+
+  // DEC layout
+  const decIn=flows['DEC']?flows['DEC']['in'+mkSuf]:0;
+  const decStop=flows['DEC']?flows['DEC']['stop'+mkSuf]:0;
+  const decPass=flows['DEC']?flows['DEC']['pass'+mkSuf]:0;
+  const yDEC_top=TOP, yDEC_bot=TOP+decIn*sc, yDEC_stopTop=yDEC_bot-decStop*sc;
+  const yDEC_dobPassTop=yDEC_stopTop-dobPass*sc;
+
+  // GAL layout
+  const galIn=flows['GAL']?flows['GAL']['in'+mkSuf]:0;
+  const galStop=flows['GAL']?flows['GAL']['stop'+mkSuf]:0;
+  const galPass=flows['GAL']?flows['GAL']['pass'+mkSuf]:0;
+  const yGAL_top=TOP, yGAL_bot=TOP+galIn*sc, yGAL_stopTop=yGAL_bot-galStop*sc;
+
+  const yConcTop=TOP, yConcBot=TOP+conc*sc;
+
+  // ── Connecting flows ───────────────────────────────────────────────────────
+  if(flows['DEC']&&firstDECdirect>0){
+    g.append('path').attr('d',fp(stageXs[firstOp]+NW,yFirstDEC_top,yFirstDEC_bot,stageXs['DEC'],yDEC_top,yDEC_dobPassTop))
+     .attr('fill',OPE_COL['DEC']).attr('opacity',.28)
+     .on('mouseover',evt=>showTip(`<strong>${firstOp} → DEC (direto)</strong><br>${fmtV(firstDECdirect)} · ${pctOf(firstDECdirect)}`,evt))
+     .on('mousemove',evt=>showTip(`<strong>${firstOp} → DEC (direto)</strong><br>${fmtV(firstDECdirect)} · ${pctOf(firstDECdirect)}`,evt))
+     .on('mouseout',hideTip);
+  }
+  if(hasDOB&&dobInKg>0){
+    const xR=stageXs[firstOp]+NW, xDL=xDOB, mx=(xR+xDL)/2;
+    g.append('path').attr('d',
+      `M${xR},${yFirstDOB_top} C${mx},${yFirstDOB_top} ${mx},${yDOB_top} ${xDL},${yDOB_top}`+
+      ` L${xDL},${yDOB_bot} C${mx},${yDOB_bot} ${mx},${yFirstDOB_bot} ${xR},${yFirstDOB_bot} Z`)
+     .attr('fill',OPE_COL['DOB']).attr('opacity',.25)
+     .on('mouseover',evt=>showTip(`<strong>${firstOp} → DOB</strong><br>${fmtV(dobInKg)} · ${pctOf(dobInKg)}`,evt))
+     .on('mousemove',evt=>showTip(`<strong>${firstOp} → DOB</strong><br>${fmtV(dobInKg)} · ${pctOf(dobInKg)}`,evt))
+     .on('mouseout',hideTip);
+  }
+  if(hasDOB&&dobPass>0&&flows['DEC']){
+    const xDR=xDOB+NW, xDL=stageXs['DEC'], mx=(xDR+xDL)/2;
+    g.append('path').attr('d',
+      `M${xDR},${yDOB_top} C${mx},${yDOB_top} ${mx},${yDEC_dobPassTop} ${xDL},${yDEC_dobPassTop}`+
+      ` L${xDL},${yDEC_stopTop} C${mx},${yDEC_stopTop} ${mx},${yDOB_stopTop} ${xDR},${yDOB_stopTop} Z`)
+     .attr('fill',OPE_COL['DOB']).attr('opacity',.2)
+     .on('mouseover',evt=>showTip(`<strong>DOB → DEC</strong><br>${fmtV(dobPass)} · ${pctOf(dobPass)}`,evt))
+     .on('mousemove',evt=>showTip(`<strong>DOB → DEC</strong><br>${fmtV(dobPass)} · ${pctOf(dobPass)}`,evt))
+     .on('mouseout',hideTip);
+  }
+  if(flows['DEC']&&decPass>0){
+    g.append('path').attr('d',fp(stageXs['DEC']+NW,yDEC_top,yDEC_stopTop,stageXs['GAL'],yGAL_top,yGAL_bot))
+     .attr('fill',OPE_COL['GAL']).attr('opacity',.28)
+     .on('mouseover',evt=>showTip(`<strong>DEC → GAL</strong><br>${fmtV(decPass)} · ${pctOf(decPass)}`,evt))
+     .on('mousemove',evt=>showTip(`<strong>DEC → GAL</strong><br>${fmtV(decPass)} · ${pctOf(decPass)}`,evt))
+     .on('mouseout',hideTip);
+  }
+  if(flows['GAL']&&galPass>0){
+    g.append('path').attr('d',fp(stageXs['GAL']+NW,yGAL_top,yGAL_stopTop,xCONC,yConcTop,yConcTop+galPass*sc))
+     .attr('fill','#34d399').attr('opacity',.28)
+     .on('mouseover',evt=>showTip(`<strong>GAL → Concluído</strong><br>${fmtV(galPass)} · ${pctOf(galPass)}`,evt))
+     .on('mouseout',hideTip);
+  }
+  if(firstConcDirect>0&&!flows['DEC']){
+    const gp=flows['GAL']?galPass*sc:0;
+    g.append('path').attr('d',fp(stageXs[firstOp]+NW,TOP,TOP+firstConcDirect*sc,xCONC,yConcTop+gp,yConcBot))
+     .attr('fill','#34d399').attr('opacity',.2).on('mouseout',hideTip);
+  }
+
+  // ── Nodes ──────────────────────────────────────────────────────────────────
+  const addNode=(ope,x,yT,inH,stopH,col,t2)=>nodeRect(ope,x,yT,inH,stopH,col,t2);
+
+  addNode(firstOp,stageXs[firstOp],TOP,firstIn*sc,firstStop*sc,OPE_COL[firstOp],
+    `<strong>${firstOp} — ${OPE_LABEL[firstOp]||firstOp}</strong><br>`+
+    `Entrada: ${fmtV(firstIn)} · ${pctOf(firstIn)}<br>`+
+    `Passa: ${fmtV(firstPass)} · ${pctOf(firstPass)}<br>`+
+    `<span style="color:#ef4444">Para aqui: ${fmtV(firstStop)} · ${pctOf(firstStop)}</span>`);
+  stageLbl(firstOp,stageXs[firstOp],TOP);
+  lbl(stageXs[firstOp]+NW+5,TOP+firstIn*sc/2-4,fmtV(firstIn),9,'#8892a4','start');
+  lbl(stageXs[firstOp]+NW+5,TOP+firstIn*sc/2+7,pctOf(firstIn),8,'#4d5568','start');
+  if(firstStop*sc>14){const ys=yFirstStop_top+firstStop*sc/2;lbl(stageXs[firstOp]-4,ys,pctOf(firstStop),8,'#ef4444','end');lbl(stageXs[firstOp]-4,ys+10,fmtV(firstStop),8,'#ef4444','end');dropArrow(stageXs[firstOp],yBot_first,'');}
+
+  if(hasDOB&&dobInKg>0){
+    addNode('DOB',xDOB,yDOB_top,dobInKg*sc,dobStop*sc,OPE_COL['DOB'],
+      `<strong>DOB — Dobrar</strong><br>Entrada: ${fmtV(dobInKg)} · ${pctOf(dobInKg)}<br>Passa: ${fmtV(dobPass)} · ${pctOf(dobPass)}<br><span style="color:#ef4444">Para aqui: ${fmtV(dobStop)} · ${pctOf(dobStop)}</span>`);
+    stageLbl('DOB',xDOB,yDOB_top);
+    lbl(xDOB+NW+5,yDOB_top+dobInKg*sc/2-4,fmtV(dobInKg),9,'#8892a4','start');
+    lbl(xDOB+NW+5,yDOB_top+dobInKg*sc/2+7,pctOf(dobInKg),8,'#4d5568','start');
+    if(dobStop*sc>10){const ys=yDOB_stopTop+dobStop*sc/2;lbl(xDOB-4,ys,pctOf(dobStop),8,'#ef4444','end');lbl(xDOB-4,ys+10,fmtV(dobStop),8,'#ef4444','end');dropArrow(xDOB,yDOB_bot,'');}
+  }
+  if(flows['DEC']&&decIn>0){
+    addNode('DEC',stageXs['DEC'],yDEC_top,decIn*sc,decStop*sc,OPE_COL['DEC'],
+      `<strong>DEC — Decapar</strong><br>Entrada: ${fmtV(decIn)} · ${pctOf(decIn)}<br>Passa: ${fmtV(decPass)} · ${pctOf(decPass)}<br><span style="color:#ef4444">Para aqui: ${fmtV(decStop)} · ${pctOf(decStop)}</span>`);
+    stageLbl('DEC',stageXs['DEC'],TOP);
+    lbl(stageXs['DEC']+NW+5,yDEC_top+decIn*sc/2-4,fmtV(decIn),9,'#8892a4','start');
+    lbl(stageXs['DEC']+NW+5,yDEC_top+decIn*sc/2+7,pctOf(decIn),8,'#4d5568','start');
+    if(decStop*sc>14){const ys=yDEC_stopTop+decStop*sc/2;lbl(stageXs['DEC']-4,ys,pctOf(decStop),8,'#ef4444','end');lbl(stageXs['DEC']-4,ys+10,fmtV(decStop),8,'#ef4444','end');dropArrow(stageXs['DEC'],yDEC_bot,'');}
+  }
+  if(flows['GAL']&&galIn>0){
+    addNode('GAL',stageXs['GAL'],yGAL_top,galIn*sc,galStop*sc,OPE_COL['GAL'],
+      `<strong>GAL — Galvanizar</strong><br>Entrada: ${fmtV(galIn)} · ${pctOf(galIn)}<br>Passa: ${fmtV(galPass)} · ${pctOf(galPass)}<br><span style="color:#ef4444">Para aqui: ${fmtV(galStop)} · ${pctOf(galStop)}</span>`);
+    stageLbl('GAL',stageXs['GAL'],TOP);
+    lbl(stageXs['GAL']+NW+5,yGAL_top+galIn*sc/2-4,fmtV(galIn),9,'#8892a4','start');
+    lbl(stageXs['GAL']+NW+5,yGAL_top+galIn*sc/2+7,pctOf(galIn),8,'#4d5568','start');
+    if(galStop*sc>12){const ys=yGAL_stopTop+galStop*sc/2;lbl(stageXs['GAL']-4,ys,pctOf(galStop),8,'#ef4444','end');dropArrow(stageXs['GAL'],yGAL_bot,'');}
+  }
+  if(conc>0){
+    g.append('rect').attr('x',xCONC).attr('y',yConcTop).attr('width',NW).attr('height',Math.max(1,yConcBot-yConcTop)).attr('fill','#34d399').attr('rx',3)
+     .on('mouseover',evt=>showTip(`<strong>✓ Concluído</strong><br>${fmtV(conc)} · ${pctOf(conc)}`,evt)).on('mouseout',hideTip);
+    lbl(xCONC+NW/2,TOP-18,'✓',13,'#34d399','middle',true);lbl(xCONC+NW/2,TOP-6,'Concluído',9,'#4d5568');
+    lbl(xCONC+NW+5,yConcTop+(yConcBot-yConcTop)/2-4,fmtV(conc),10,'#34d399','start',true);
+    lbl(xCONC+NW+5,yConcTop+(yConcBot-yConcTop)/2+9,pctOf(conc),9,'#34d399','start');
+  }
 }
 
 

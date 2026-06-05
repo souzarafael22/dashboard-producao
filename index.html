@@ -148,67 +148,15 @@ tr:hover td { background: var(--bg3); }
 </header>
 
 <nav class="nav">
-  <button class="nav-btn active" onclick="showTab('overview')">Visão Geral</button>
+  <button class="nav-btn active" onclick="showTab('mes_atual')">📅 Mês Atual</button>
+  <button class="nav-btn" onclick="showTab('analise')">🔍 Análise de Período</button>
   <button class="nav-btn" onclick="showTab('gantt')">Fluxo por OP (Gantt)</button>
   <button class="nav-btn" onclick="showTab('espera')">Fila de Espera</button>
-  <button class="nav-btn" onclick="showTab('mes_atual')">📅 Mês Atual</button>
-  <button class="nav-btn" onclick="showTab('analise')">🔍 Análise de Período</button>
   <button class="nav-btn" onclick="showTab('material')">🧱 Por Material</button>
   <button class="nav-btn" onclick="showTab('sankey')">🔀 Fluxo por Material</button>
 </nav>
 
 <div class="container">
-
-<!-- OVERVIEW -->
-<div id="tab-overview" class="panel active">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-    <div style="display:flex;gap:8px">
-      <button id="ovr-btn-ops" onclick="setOvrMetric('ops')" style="background:#3b82f6;border:1px solid #3b82f6;border-radius:5px;color:#fff;padding:5px 14px;font-size:12px;cursor:pointer;font-family:var(--font)">Nº OPs</button>
-      <button id="ovr-btn-qtd" onclick="setOvrMetric('qtd')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);padding:5px 14px;font-size:12px;cursor:pointer;font-family:var(--font)">Qtd de peças</button>
-      <button id="ovr-btn-peso" onclick="setOvrMetric('peso')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:5px;color:var(--text2);padding:5px 14px;font-size:12px;cursor:pointer;font-family:var(--font)">Peso (kg)</button>
-    </div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">Último apontamento: 03/06/2026 às 22:50</div>
-  </div>
-
-  <div class="metrics" id="ovr-metrics"></div>
-
-  <div class="grid2">
-    <div>
-      <div class="section-title">Pendentes por operação atual</div>
-      <div id="ope-bars"></div>
-
-      <div style="margin-top:24px">
-        <div class="section-title">Alertas</div>
-        <div class="alert">
-          <div>
-            <div class="alert-title">2 OPs paradas há +60 dias aguardando GAL</div>
-            <div class="alert-sub">OP 50000562 (86 dias) e OP 50000559 (71 dias). Material decapado desde fevereiro.</div>
-          </div>
-        </div>
-        <div class="alert warn">
-          <div>
-            <div class="alert-title">185 OPs aguardando Perfilar — maior gargalo</div>
-            <div class="alert-sub">42% das OPs pendentes estão na fila de PRF. Verificar capacidade do centro de trabalho.</div>
-          </div>
-        </div>
-        <div class="alert warn">
-          <div>
-            <div class="alert-title">166 OPs aguardando Decapar</div>
-            <div class="alert-sub">Maior gargalo atual — 166 OPs. Priorizar lotes mais antigos.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div>
-      <div class="section-title">Distribuição do tempo de espera</div>
-      <div style="position:relative;height:220px;margin-bottom:24px">
-        <canvas id="waitChart" role="img" aria-label="Distribuição de tempo de espera">315 OPs 0-7 dias; 162 OPs 8-30 dias; 2 OPs +60 dias.</canvas>
-      </div>
-      <div class="section-title">Distribuição por material</div>
-      <div id="mat-bars"></div>
-    </div>
-  </div>
-</div>
 
 <!-- GANTT -->
 <div id="tab-gantt" class="panel">
@@ -288,7 +236,7 @@ tr:hover td { background: var(--bg3); }
 
 
 <!-- MÊS ATUAL -->
-<div id="tab-mes_atual" class="panel">
+<div id="tab-mes_atual" class="panel active">
   <p style="font-size:12px;color:var(--text2);margin-bottom:18px">
     Backlog total pendente + realizado em <strong id="mes-nome" style="font-weight:500">Junho/2026</strong>. <span id="mes-dias-rest"></span> dias úteis restantes no mês.
   </p>
@@ -409,82 +357,15 @@ function showTab(id){
 // Overview — dynamic metric (ops / qtd / peso)
 const OVR_DATA = {"ops":{"total":756,"conc":460,"pend":296,"label":"OPs","sub_conc":"60.8% do total","sub_pend":"39.2% do total"},"qtd":{"total":42793,"conc":27875,"pend":14918,"label":"peças","sub_conc":"65.1% do total","sub_pend":"34.9% do total"},"peso":{"total":311377,"conc":184598,"pend":126778,"label":"kg","sub_conc":"59.3% do total","sub_pend":"40.7% do total"}};
 const OVR_OPE = {"ops":[{"ope":"LPA","label":"LPA — Cortar/Furar","v":4},{"ope":"PRF","label":"PRF — Perfilar","v":76},{"ope":"DOB","label":"DOB — Dobrar","v":88},{"ope":"DEC","label":"DEC — Decapar","v":110},{"ope":"GAL","label":"GAL — Galvanizar","v":17}],"qtd":[{"ope":"LPA","label":"LPA — Cortar/Furar","v":600},{"ope":"PRF","label":"PRF — Perfilar","v":3676},{"ope":"DOB","label":"DOB — Dobrar","v":4358},{"ope":"DEC","label":"DEC — Decapar","v":5480},{"ope":"GAL","label":"GAL — Galvanizar","v":756}],"peso":[{"ope":"LPA","label":"LPA — Cortar/Furar","v":1150},{"ope":"PRF","label":"PRF — Perfilar","v":31176},{"ope":"DOB","label":"DOB — Dobrar","v":36960},{"ope":"DEC","label":"DEC — Decapar","v":48075},{"ope":"GAL","label":"GAL — Galvanizar","v":8783}]};
-let ovrMetric = 'ops';
 
-function setOvrMetric(m){
-  ovrMetric = m;
-  ['ops','qtd','peso'].forEach(x=>{
-    const b=document.getElementById('ovr-btn-'+x);
-    b.style.background=m===x?'#3b82f6':'var(--bg3)';
-    b.style.color=m===x?'#fff':'var(--text2)';
-    b.style.borderColor=m===x?'#3b82f6':'var(--border2)';
-  });
-  renderOverview();
-}
+
+
 
 function fmtOvr(v,m){
   if(m==='peso') return (v/1000).toFixed(1)+'t';
   return v.toLocaleString('pt-BR');
 }
 
-function renderOverview(){
-  const M = ovrMetric;
-  const d = OVR_DATA[M];
-  document.getElementById('ovr-metrics').innerHTML = `
-    <div class="metric"><div class="metric-lbl">Total</div><div class="metric-val" style="color:var(--text)">${fmtOvr(d.total,M)}</div><div class="metric-sub">${d.label}</div></div>
-    <div class="metric"><div class="metric-lbl">Concluídas</div><div class="metric-val" style="color:var(--accent-green)">${fmtOvr(d.conc,M)}</div><div class="metric-sub">${d.sub_conc}</div></div>
-    <div class="metric"><div class="metric-lbl">Pendentes</div><div class="metric-val" style="color:var(--accent-amber)">${fmtOvr(d.pend,M)}</div><div class="metric-sub">${d.sub_pend}</div></div>
-    <div class="metric"><div class="metric-lbl">Aguard. há +60 dias</div><div class="metric-val" style="color:var(--accent-red)">2</div><div class="metric-sub">crítico — GAL parado</div></div>
-    <div class="metric"><div class="metric-lbl">Dias úteis restantes</div><div class="metric-val" style="color:var(--accent-amber)">8</div><div class="metric-sub">até 31/mai/2026</div></div>`;
-
-  const opeBars = OVR_OPE[M];
-  const maxV = opeBars[0].v;
-  const barsEl = document.getElementById('ope-bars');
-  barsEl.innerHTML = '';
-  opeBars.forEach(d=>{
-    const pctV=d.v/maxV*100;
-    const dispV = M==='peso'?(d.v/1000).toFixed(1)+'t':d.v.toLocaleString('pt-BR');
-    barsEl.innerHTML+=`<div class="hbar-row">
-      <div class="hbar-label">${d.label}</div>
-      <div class="hbar-track"><div class="hbar-fill" style="width:${pctV}%;background:${OPE_COLORS[d.ope]}"></div></div>
-      <div class="hbar-count" style="color:${OPE_COLORS[d.ope]}">${dispV}</div>
-    </div>`;
-  });
-
-  // Material bars
-  const matCounts={};
-  DATA.forEach(o=>{if(o.cur!=='FIM') matCounts[o.mat]=(matCounts[o.mat]||0)+1;});
-  const matSorted=Object.entries(matCounts).sort((a,b)=>b[1]-a[1]);
-  const maxMat=matSorted[0]?.[1]||1;
-  const matEl=document.getElementById('mat-bars');
-  matEl.innerHTML='';
-  matSorted.forEach(([mat,cnt])=>{
-    const pctV=cnt/maxMat*100;
-    matEl.innerHTML+=`<div class="hbar-row">
-      <div class="hbar-label" style="font-size:11px">${mat}</div>
-      <div class="hbar-track"><div class="hbar-fill" style="width:${pctV}%;background:#4d5568"></div></div>
-      <div class="hbar-count">${cnt}</div>
-    </div>`;
-  });
-}
-renderOverview();
-
-// Wait chart
-new Chart(document.getElementById('waitChart'),{
-  type:'bar',
-  data:{
-    labels:['0–7 dias','8–30 dias','+60 dias'],
-    datasets:[{data:[68,105,0],backgroundColor:['#10b981','#f59e0b','#ef4444'],borderRadius:4}]
-  },
-  options:{
-    responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.raw} OPs`}}},
-    scales:{
-      y:{beginAtZero:true,ticks:{color:'#4d5568',font:{size:11}},grid:{color:'rgba(255,255,255,0.05)'}},
-      x:{ticks:{color:'#4d5568',font:{size:11}},grid:{display:false}}
-    }
-  }
-});
 
 // ---- GANTT ----
 const MIN_D=new Date('2026-02-01').getTime();
@@ -1495,6 +1376,9 @@ window.showTab = function(id){
   if(id==='mes_atual') renderMesAtual();
   if(id==='analise'){ if(!anFrom) setPreset('7d'); else renderAnalise(); }
 };
+
+// Initial render on page load
+renderMesAtual();
 </script>
 </body>
 </html>
